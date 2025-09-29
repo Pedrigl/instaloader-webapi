@@ -39,13 +39,25 @@ class InstagramService:
         return await run_in_threadpool(make_loader)
 
     async def load_saved_session_if_any(self) -> Optional[str]:
-        """Scan ~/.config/instaloader for session-<username> files and load the first working one.
+        """Scan for session-<username> files and load the first working one.
+
+        Preference order:
+          1. Directory specified by SESSION_OUTPUT_DIR env var
+          2. Project-local ./sessions directory
+          3. Legacy ~/.config/instaloader (fallback)
 
         Returns username if loaded, else None.
         """
-        session_dir = os.path.expanduser(os.path.join('~', '.config', 'instaloader'))
-        if not os.path.isdir(session_dir):
-            return None
+        candidate = os.environ.get('SESSION_OUTPUT_DIR') or os.path.join(os.getcwd(), 'sessions')
+        if os.path.isdir(candidate):
+            session_dir = candidate
+        else:
+            # fallback to legacy location
+            legacy = os.path.expanduser(os.path.join('~', '.config', 'instaloader'))
+            if os.path.isdir(legacy):
+                session_dir = legacy
+            else:
+                return None
         for fn in os.listdir(session_dir):
             if not fn.startswith('session-'):
                 continue

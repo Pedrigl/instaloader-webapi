@@ -2,3 +2,4 @@ __pycache__/
 .mypy_cache/
 # local environment files (secrets)
 .env
+sessions/*

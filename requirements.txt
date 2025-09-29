@@ -1,0 +1,8 @@
+fastapi
+uvicorn[standard]
+instaloader
+SQLAlchemy>=1.4
+asyncpg
+httpx
+python-dotenv
+psycopg2-binary
