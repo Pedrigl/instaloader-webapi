@@ -17,8 +17,8 @@ Examples
 """
 from typing import Dict, List, Optional, Tuple
 
-from .instaloader import Instaloader
-from .structures import Profile, Post, StoryItem, TitlePic
+from ..instaloader import Instaloader
+from ..structures import Profile, Post, StoryItem, TitlePic
 
 
 def get_stories_for_user(loader: Instaloader, username: str):
