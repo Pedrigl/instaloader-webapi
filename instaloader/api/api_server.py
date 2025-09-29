@@ -25,12 +25,6 @@ def get_shared_loader(app: FastAPI):
 
 
 def load_saved_session_if_any():
-    """Scan ~/.config/instaloader for saved session files and load the first working session.
-
-    This looks for files named `session-<username>` in the default config dir and attempts to
-    load them. On success the loader is stored in app.state.loader and its session dict in
-    app.state.session.
-    """
     session_dir = os.path.expanduser(os.path.join('~', '.config', 'instaloader'))
     if not os.path.isdir(session_dir):
         return
@@ -72,12 +66,6 @@ class LoginBody(BaseModel):
 
 @app.post('/login')
 def login(body: LoginBody):
-    """Log in and keep the logged-in Instaloader in memory for subsequent requests.
-
-    Warning: This stores the session in memory in app.state.loader. For a production
-    deployment persist session data to a secure store and reuse it across processes.
-    """
-    # Create loader and try to log in
     L = make_loader()
     try:
         L.login(body.username, body.password)
@@ -129,7 +117,6 @@ def login_2fa(body: TwoFactorBody):
 def logout():
     L = get_shared_loader(app)
     if not L:
-        # still clear pending 2fa if any
         pending = getattr(app.state, 'pending_2fa', None)
         if pending:
             try:
@@ -142,7 +129,7 @@ def logout():
     finally:
         app.state.loader = None
         app.state.session = None
-        # also clear pending 2fa if any
+
         app.state.pending_2fa = None
     return {"status": "logged_out"}
 
@@ -170,16 +157,12 @@ def profile(username: str):
 
 @app.get('/stories/{username}')
 def stories(username: str):
-    """Return list of current story items for given username.
-
-    Requires the loader to be logged in to view that user's stories (private stories require follow).
-    """
     shared = get_shared_loader(app)
     if not shared or not getattr(shared.context, 'is_logged_in', False):
         raise HTTPException(status_code=401, detail='server not logged in; call /login or import a session')
     try:
         items = get_stories_for_user(shared, username)
-        # remove callables before returning JSON serializable structure
+        
         for it in items:
             it.pop('get_bytes', None)
         return items
@@ -191,7 +174,7 @@ def stories(username: str):
 
 @app.get('/stories/{username}/media/{index}')
 def story_media(username: str, index: int = 1):
-    """Stream the bytes for the story item at 1-based `index` for `username`."""
+    
     shared = get_shared_loader(app)
     if not shared or not getattr(shared.context, 'is_logged_in', False):
         raise HTTPException(status_code=401, detail='server not logged in; call /login or import a session')
@@ -220,7 +203,7 @@ def post(shortcode: str):
 
 @app.get('/post/{shortcode}/media/{index}')
 def post_media(shortcode: str, index: int = 1):
-    """Stream a particular media of a post. `index` is 1-based."""
+    
     L = make_loader()
     try:
         items = get_post_media(L, shortcode)
