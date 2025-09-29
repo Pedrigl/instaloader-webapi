@@ -48,7 +48,8 @@ setup(
     install_requires=requirements,
     python_requires='>=3.9',
     extras_require=optional_requirements,
-    entry_points={'console_scripts': ['instaloader=instaloader.__main__:main']},
+    # CLI entry point removed: this package is intended to be used as a library (API)
+    entry_points={},
     zip_safe=False,
     keywords=keywords,
     classifiers=[
