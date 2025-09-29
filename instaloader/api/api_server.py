@@ -1,17 +1,9 @@
-from fastapi import FastAPI, HTTPException, Response
+from fastapi import FastAPI, HTTPException, Response, Depends
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from instaloader import TwoFactorAuthRequiredException, BadCredentialsException
-from typing import Optional
 
-from instaloader.api import (
-    make_loader,
-    get_profile_json,
-    get_post_json,
-    get_post_media,
-    get_stories_for_user,
-    get_story_media,
-)
+from instaloader.services.instagram_service import get_service_dep
 import os
 from instaloader.instaloader import get_default_session_filename
 
@@ -24,39 +16,21 @@ def get_shared_loader(app: FastAPI):
     return getattr(app.state, 'loader', None)
 
 
-def load_saved_session_if_any():
-    session_dir = os.path.expanduser(os.path.join('~', '.config', 'instaloader'))
-    if not os.path.isdir(session_dir):
-        return
-    for fn in os.listdir(session_dir):
-        if not fn.startswith('session-'):
-            continue
-        username = fn[len('session-'):]
-        sessionfile = os.path.join(session_dir, fn)
-        try:
-            L = make_loader()
-            # load_session_from_file raises FileNotFoundError if missing, or other errors
-            L.load_session_from_file(username, sessionfile)
-            # verify
-            if L.context.is_logged_in:
-                app.state.loader = L
-                try:
-                    app.state.session = L.save_session()
-                except Exception:
-                    app.state.session = None
-                print(f'Loaded saved session for {username} from {sessionfile}')
-                return
-            L.close()
-        except Exception:
-            try:
-                L.close()
-            except Exception:
-                pass
-            continue
+@app.on_event('startup')
+async def startup_load_saved_session():
+    try:
+        # We don't have DB session here; only load from config dir into service
+        svc = get_service_dep() if not callable(get_service_dep) else None
+        # get_service_dep is an async dependency for FastAPI; call the
+        # underlying factory directly for startup actions.
+        from instaloader.services.instagram_service import get_global_service
 
-
-# Attempt to load a saved session at import time so the server can use it immediately.
-load_saved_session_if_any()
+        username = await get_global_service().load_saved_session_if_any()
+        if username:
+            print(f'Loaded saved session for {username} from config dir')
+    except Exception:
+        # don't fail startup on session loading
+        pass
 
 
 class LoginBody(BaseModel):
@@ -65,24 +39,19 @@ class LoginBody(BaseModel):
 
 
 @app.post('/login')
-def login(body: LoginBody):
-    L = make_loader()
+async def login(body: LoginBody, service=Depends(get_service_dep)):
     try:
-        L.login(body.username, body.password)
+        session = await service.login(body.username, body.password)
     except TwoFactorAuthRequiredException:
-        # Keep L alive with pending two-factor auth state and inform client
-        app.state.pending_2fa = L
+        # service.pending_2fa is set
         return {"status": "2fa_required", "detail": "Two-factor authentication required. Call /login/2fa with the code."}
     except Exception as e:
-        L.close()
         raise HTTPException(status_code=403, detail=str(e))
-    # store loader for reuse
-    app.state.loader = L
-    # store session dict (optional)
-    try:
-        app.state.session = L.save_session()
-    except Exception:
-        app.state.session = None
+
+    # service stored loader/session internally
+
+    # persist session in DB if available
+    # (persistence handled by service)
     return {"status": "logged_in", "username": body.username}
 
 
@@ -92,80 +61,52 @@ class TwoFactorBody(BaseModel):
 
 
 @app.post('/login/2fa')
-def login_2fa(body: TwoFactorBody):
-    L = app.state.pending_2fa if hasattr(app.state, 'pending_2fa') else None
-    if not L:
-        raise HTTPException(status_code=400, detail='no pending two-factor authentication')
+async def login_2fa(body: TwoFactorBody, service=Depends(get_service_dep)):
     try:
-        L.two_factor_login(body.code)
+        session = await service.two_factor(body.code)
     except BadCredentialsException as e:
         raise HTTPException(status_code=403, detail=str(e))
     except Exception as e:
-        # Keep pending state for retry or clear depending on error
         raise HTTPException(status_code=500, detail=str(e))
-    # success: move pending loader to active loader
-    app.state.loader = L
-    try:
-        app.state.session = L.save_session()
-    except Exception:
-        app.state.session = None
-    app.state.pending_2fa = None
-    return {"status": "logged_in", "username": L.context.username}
+
+    return {"status": "logged_in", "username": service.get_username()}
 
 
 @app.post('/logout')
-def logout():
-    L = get_shared_loader(app)
-    if not L:
-        pending = getattr(app.state, 'pending_2fa', None)
-        if pending:
-            try:
-                pending.close()
-            finally:
-                app.state.pending_2fa = None
-        raise HTTPException(status_code=400, detail='not logged in')
+async def logout(service=Depends(get_service_dep)):
     try:
-        L.close()
-    finally:
-        app.state.loader = None
-        app.state.session = None
-
-        app.state.pending_2fa = None
+        await service.logout()
+    except Exception:
+        raise HTTPException(status_code=400, detail='not logged in')
     return {"status": "logged_out"}
 
 
 @app.get('/login/status')
-def login_status():
-    L = get_shared_loader(app)
-    if not L or not getattr(L.context, 'is_logged_in', False):
+def login_status(service=Depends(get_service_dep)):
+    if not service.is_logged_in():
         return {"logged_in": False}
-    return {"logged_in": True, "username": L.context.username}
+    return {"logged_in": True, "username": service.get_username()}
 
 
 @app.get('/profile/{username}')
-def profile(username: str):
-    L = make_loader()
+async def profile(username: str, service=Depends(get_service_dep)):
     try:
-        data = get_profile_json(L, username)
+        data = await service.get_profile(username)
         return data
     except Exception as e:
         raise HTTPException(status_code=404, detail=str(e))
-    finally:
-        L.close()
 
 
 
 @app.get('/stories/{username}')
-def stories(username: str):
-    shared = get_shared_loader(app)
-    if not shared or not getattr(shared.context, 'is_logged_in', False):
-        raise HTTPException(status_code=401, detail='server not logged in; call /login or import a session')
+async def stories(username: str, service=Depends(get_service_dep)):
     try:
-        items = get_stories_for_user(shared, username)
-        
+        items = await service.get_stories_for_user(username)
         for it in items:
             it.pop('get_bytes', None)
         return items
+    except RuntimeError as e:
+        raise HTTPException(status_code=401, detail=str(e))
     except HTTPException:
         raise
     except Exception as e:
@@ -173,16 +114,14 @@ def stories(username: str):
 
 
 @app.get('/stories/{username}/media/{index}')
-def story_media(username: str, index: int = 1):
-    
-    shared = get_shared_loader(app)
-    if not shared or not getattr(shared.context, 'is_logged_in', False):
-        raise HTTPException(status_code=401, detail='server not logged in; call /login or import a session')
+async def story_media(username: str, index: int = 1, service=Depends(get_service_dep)):
     try:
-        content, mime = get_story_media(shared, username, index)
+        content, mime = await service.get_story_media(username, index)
         return Response(content, media_type=mime)
     except IndexError:
         raise HTTPException(status_code=404, detail='story index out of range')
+    except RuntimeError as e:
+        raise HTTPException(status_code=401, detail=str(e))
     except HTTPException:
         raise
     except Exception as e:
@@ -190,31 +129,22 @@ def story_media(username: str, index: int = 1):
 
 
 @app.get('/post/{shortcode}')
-def post(shortcode: str):
-    L = make_loader()
+async def post(shortcode: str, service=Depends(get_service_dep)):
     try:
-        data = get_post_json(L, shortcode)
+        data = await service.get_post(shortcode)
         return data
     except Exception as e:
         raise HTTPException(status_code=404, detail=str(e))
-    finally:
-        L.close()
 
 
 @app.get('/post/{shortcode}/media/{index}')
-def post_media(shortcode: str, index: int = 1):
-    
-    L = make_loader()
+async def post_media(shortcode: str, index: int = 1, service=Depends(get_service_dep)):
     try:
-        items = get_post_media(L, shortcode)
-        if index < 1 or index > len(items):
-            raise HTTPException(status_code=404, detail='media index out of range')
-        item = items[index - 1]
-        content, mime = item['get_bytes']()
+        content, mime = await service.get_post_media_bytes(shortcode, index)
         return Response(content, media_type=mime)
+    except IndexError:
+        raise HTTPException(status_code=404, detail='media index out of range')
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        L.close()
