@@ -31,6 +31,23 @@ async def startup_load_saved_session():
     except Exception:
         # don't fail startup on session loading
         pass
+    # Also run the supermarket worker once to seed DB (optional)
+    try:
+        # lazy import DB and worker to avoid hard dependency at import time
+        from instaloader.worker import supermarket_worker as _smw
+        from instaloader.db.database import AsyncSessionLocal
+
+        async def _run_sm_once():
+            async with AsyncSessionLocal() as db:
+                await _smw.run_once(db)
+
+        # schedule it but don't block startup
+        import asyncio
+
+        asyncio.create_task(_run_sm_once())
+    except Exception:
+        # skip supermarket seeding if DB not configured or worker errors
+        pass
 
 
 class LoginBody(BaseModel):
