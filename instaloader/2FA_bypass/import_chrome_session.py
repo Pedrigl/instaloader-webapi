@@ -36,7 +36,7 @@ def _attempt_fix_permissions(path: str) -> bool:
     return os.access(path, os.W_OK)
 
 
-def import_chrome_session(output_dir: str | None = None, fix_permissions: bool = False):
+def import_chrome_session(output_dir: str | None = None, fix_permissions: bool = True):
     """Import Instagram cookies from Chrome and save an Instaloader session.
 
     By default this writes session files into a local `./sessions` directory so
