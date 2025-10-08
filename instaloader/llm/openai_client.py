@@ -14,11 +14,12 @@ OPENAI_MODEL = os.getenv('OPENAI_MODEL')
 OPENAI_TIMEOUT = float(os.getenv('OPENAI_TIMEOUT', '30'))
 OPENAI_URL = os.getenv('OPENAI_URL')
 
-async def ask_openai(prompt: str, model: Optional[str] = None, temperature: float = 0.0) -> str:
+def ask_openai(prompt: str, model: Optional[str] = None, temperature: float = 0.0) -> str:
     if not OPENAI_API_KEY:
         raise RuntimeError('OPENAI_API_KEY is not set')
-    client = OpenAI(api_key=OPENAI_API_KEY, model=model or OPENAI_MODEL, base_url=OPENAI_URL, timeout=OPENAI_TIMEOUT)
-    response = await client.chat.completions.create(
+    client = OpenAI(api_key=OPENAI_API_KEY, base_url=OPENAI_URL, timeout=OPENAI_TIMEOUT)
+    response = client.chat.completions.create(
+        model=model or OPENAI_MODEL,
         messages=[
             {"role": "user", "content": prompt}
         ],

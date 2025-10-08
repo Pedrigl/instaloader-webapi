@@ -8,7 +8,7 @@ that should be replaced with a real LLM call.
 from typing import List, Dict, Any
 import base64
 import json
-
+import os
 from .openai_client import ask_openai
 
 
@@ -19,9 +19,9 @@ objects matching this interface:
 
 [
   {
-    "id": "<unique id>",
+    "id": "<unique id   >",
     "title": "<product title>",
-    "marketPrices": [{"market":"<market>", "price": <number>}],
+    "marketPrices": [{"market":"<name of supermarket market>", "price": <number>}],
     "imageUrl": "<optional image url>",
     "description": "<short description>"
   }
@@ -36,24 +36,45 @@ async def extract_items_from_image(image_bytes: bytes, source_type: str, source_
     b64 = base64.b64encode(image_bytes).decode('ascii')
     truncated = b64[:12000]
     prompt = LLM_PRODUCT_PROMPT + "\n\nBase64ImagePrefix: " + truncated
+
+    # debug toggle
+    DEBUG = os.getenv("LLM_DEBUG", "").lower() in ("1", "true", "yes")
+
     try:
-        resp = await ask_openai(prompt, temperature=0.0)
-        parsed = json.loads(resp)
-        if isinstance(parsed, list):
-            normalized = []
-            for item in parsed:
-                normalized.append({
-                    'id': item.get('id'),
-                    'title': item.get('title'),
-                    'marketPrices': item.get('marketPrices') or [],
-                    'imageUrl': item.get('imageUrl') or item.get('image_url') or '',
-                    'description': item.get('description') or '',
-                    'source_type': source_type,
-                    'source_id': source_id,
-                    'raw_data': item,
-                })
-            return normalized
-    except Exception:
-        # fallback to empty list
+        resp = ask_openai(prompt, temperature=0.0)
+    except Exception as e:
+        # surface exact LLM client error (API key missing, network, import error, etc)
+        print(f"LLM call failed: {type(e).__name__}: {e}")
+        if DEBUG:
+            import traceback
+            traceback.print_exc()
         return []
+
+    # try parse JSON but log the response preview on failure
+    try:
+        parsed = json.loads(resp)
+    except Exception as e:
+        preview = (resp[:2000] + "...") if isinstance(resp, str) else str(resp)
+        print("LLM response was not valid JSON:", type(e).__name__, e)
+        print("LLM response preview:", preview)
+        return []
+
+    if isinstance(parsed, list):
+        normalized = []
+        for item in parsed:
+            normalized.append({
+                'id': item.get('id'),
+                'title': item.get('title'),
+                'marketPrices': item.get('marketPrices') or [],
+                'imageUrl': item.get('imageUrl') or item.get('image_url') or '',
+                'description': item.get('description') or '',
+                'source_type': source_type,
+                'source_id': source_id,
+                'raw_data': item,
+            })
+        return normalized
+
+    # unexpected shape
+    if DEBUG:
+        print("LLM returned non-list JSON:", parsed)
     return []

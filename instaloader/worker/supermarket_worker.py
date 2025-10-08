@@ -33,6 +33,7 @@ async def process_stories_once(db, usernames: List[str]):
         for i, st in enumerate(stories, start=1):
             getter = st.get('get_bytes')
             if not getter:
+                print(f'Story {username}#{i} has no get_bytes method, skip')
                 # skip if not available
                 continue
             try:
@@ -44,7 +45,6 @@ async def process_stories_once(db, usernames: List[str]):
                 for it in items:
                     # normalize fields and insert
                     await _crud.insert_supermarket_item(db, it)
-                    print(f'Inserted item {it.get("name")} from {username} story {i}')
             except Exception as e:
                 print(f'Failed processing story {username}#{i}: {e}')
 
