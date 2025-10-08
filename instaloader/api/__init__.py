@@ -4,7 +4,7 @@ Re-export selected helpers from the implementation module `api.py` so that
 `from instaloader.api import make_loader, get_profile_json, ...` works when
 importing `instaloader.api` as a module.
 """
-from .api import (
+from .medialoader import (
     make_loader,
     get_profile_json,
     get_post_json,

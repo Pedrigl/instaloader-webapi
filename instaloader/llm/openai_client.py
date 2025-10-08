@@ -7,31 +7,21 @@ Environment variables:
 import os
 import httpx
 from typing import Optional
+from openai import OpenAI
 
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
-OPENAI_MODEL = os.getenv('OPENAI_MODEL', 'gpt-4o-mini')
+OPENAI_MODEL = os.getenv('OPENAI_MODEL')
 OPENAI_TIMEOUT = float(os.getenv('OPENAI_TIMEOUT', '30'))
-
+OPENAI_URL = os.getenv('OPENAI_URL')
 
 async def ask_openai(prompt: str, model: Optional[str] = None, temperature: float = 0.0) -> str:
     if not OPENAI_API_KEY:
         raise RuntimeError('OPENAI_API_KEY is not set')
-    url = 'https://api.openai.com/v1/chat/completions'
-    payload = {
-        'model': model or OPENAI_MODEL,
-        'messages': [{'role': 'user', 'content': prompt}],
-        'temperature': float(temperature),
-        'max_tokens': 800,
-    }
-    headers = {
-        'Authorization': f'Bearer {OPENAI_API_KEY}',
-        'Content-Type': 'application/json',
-    }
-    async with httpx.AsyncClient(timeout=OPENAI_TIMEOUT) as client:
-        r = await client.post(url, json=payload, headers=headers)
-        r.raise_for_status()
-        data = r.json()
-        choice = data.get('choices', [{}])[0]
-        if 'message' in choice:
-            return choice['message'].get('content', '')
-        return choice.get('text', '')
+    client = OpenAI(api_key=OPENAI_API_KEY, model=model or OPENAI_MODEL, base_url=OPENAI_URL, timeout=OPENAI_TIMEOUT)
+    response = await client.chat.completions.create(
+        messages=[
+            {"role": "user", "content": prompt}
+        ],
+        temperature=temperature
+    )
+    return response.choices[0].message.content

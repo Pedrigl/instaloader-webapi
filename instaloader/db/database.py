@@ -21,7 +21,6 @@ from sqlalchemy.orm import sessionmaker, declarative_base
 # Prefer reading DB URL from env; fallback to a local placeholder
 DATABASE_URL = os.getenv(
     'DATABASE_URL',
-    'postgresql+asyncpg://postgres:password@127.0.0.1/instaloader'
 )
 
 # Create async engine
