@@ -10,17 +10,6 @@ import shutil
 from pathlib import Path
 
 
-async def _init_db_if_available():
-    try:
-        from instaloader.db.init_db import init_models
-    except Exception:
-        return
-    try:
-        await init_models()
-    except Exception as e:
-        print('warning: failed to initialize DB:', e)
-
-
 async def _import_mounted_sessions():
     """If a host-mounted session directory exists (mounted into /data/session by compose), copy into user's config dir."""
     mount_dir = os.getenv('SESSION_MOUNT_DIR', '/data/session')
@@ -48,40 +37,48 @@ async def _load_saved_session_and_run_worker():
                 print('Loaded saved session for', username)
         except Exception as e:
             print('no saved session loaded:', e)
-
-        # run supermarket worker one-off if DB configured
-        try:
-            from instaloader.db.database import AsyncSessionLocal
-            from instaloader.worker import supermarket_worker as _smw
-
-            async with AsyncSessionLocal() as db:
-                await _smw.run_once(db)
-                print('supermarket worker run completed (one-off)')
-        except Exception as e:
-            print('skip supermarket worker (db not ready or error):', e)
     except Exception as e:
         print('warning: worker startup failed:', e)
 
 
 def main():
-    # synchronous bootstrap: run async init tasks, then start uvicorn
-    try:
+    # Run a single asyncio loop for bootstrap and then start uvicorn within
+    # the same loop to avoid mixing futures/tasks across different loops.
+    async def _app_main():
         # copy mounted sessions if any
-        asyncio.run(_import_mounted_sessions())
+        try:
+            await _import_mounted_sessions()
+        except Exception as e:
+            print('warning: import sessions failed:', e)
+
         # init DB
-        asyncio.run(_init_db_if_available())
-        # load session and run worker
-        asyncio.run(_load_saved_session_and_run_worker())
+        try:
+            await _init_db_if_available()
+        except Exception as e:
+            print('warning: init db failed:', e)
+
+        # load session and run worker one-off
+        try:
+            await _load_saved_session_and_run_worker()
+        except Exception as e:
+            print('warning: worker startup failed:', e)
+
+        # start uvicorn server inside this event loop
+        import uvicorn
+        from uvicorn import Config, Server
+
+        host = os.getenv('HOST', '0.0.0.0')
+        port = int(os.getenv('PORT', '8000'))
+        print(f'Starting uvicorn on {host}:{port} ...')
+
+        config = Config('instaloader.api.api_server:app', host=host, port=port, loop='asyncio')
+        server = Server(config)
+        await server.serve()
+
+    try:
+        asyncio.run(_app_main())
     except Exception as e:
         print('bootstrap warning:', e)
-
-    # start uvicorn
-    import uvicorn
-
-    host = os.getenv('HOST', '0.0.0.0')
-    port = int(os.getenv('PORT', '8000'))
-    print(f'Starting uvicorn on {host}:{port} ...')
-    uvicorn.run('instaloader.api.api_server:app', host=host, port=port)
 
 
 if __name__ == '__main__':
