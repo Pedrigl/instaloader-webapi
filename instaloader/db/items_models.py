@@ -11,7 +11,6 @@ class SupermarketItem(Base):
     unit = Column(String(64), nullable=True)
     store = Column(String(255), nullable=True)
     source_type = Column(String(32), nullable=True)  # 'story' or 'post'
-    source_id = Column(String(255), nullable=True)
     raw_data = Column(JSON, nullable=True)
     detected_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 

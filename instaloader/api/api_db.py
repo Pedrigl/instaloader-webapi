@@ -33,7 +33,6 @@ class SupermarketItemOut(BaseModel):
     unit: Optional[str] = None
     store: Optional[str] = None
     source_type: Optional[str] = None
-    source_id: Optional[str] = None
     raw_data: Optional[dict] = None
 
     class Config:

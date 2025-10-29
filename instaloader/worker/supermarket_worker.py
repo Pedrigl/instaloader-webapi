@@ -8,12 +8,22 @@ import asyncio
 import os
 import signal
 from typing import List
+from instaloader.models import intermediateClasses
+import requests
+import json
 
 from instaloader.services.instagram_service import get_global_service
 
 # Interval (seconds) between runs when running in loop mode
 INTERVAL_SECONDS = int(os.getenv('WORKER_INTERVAL_SECONDS', '3600'))
 
+def get_market_name(ig_user: str) -> str:
+    if ig_user.lower() == 'giganteatacadista':
+        return 'Gigante Atacadista'
+    elif ig_user.lower() == 'assaiatacadistaoficial':
+        return 'Assaí Atacadista'
+
+    return 'Mais Br'
 
 async def process_stories_once(db, usernames: List[str]):
     """Fetch stories for each username, extract items, and persist to DB."""
@@ -24,24 +34,41 @@ async def process_stories_once(db, usernames: List[str]):
 
     for username in usernames:
         try:
+            
             stories = await svc.get_stories_for_user(username)
+            parsedStories: List[dict] = []
+            for it in stories:
+                # stories may be dicts already or JSON strings depending on source
+                if isinstance(it, dict):
+                    obj = it
+                else:
+                    try:
+                        obj = json.loads(it)
+                    except Exception:
+                        # skip unparseable items
+                        continue
+                obj.pop('get_bytes', None)
+                parsedStories.append(obj)
+
         except Exception as e:
             print(f'Failed to get stories for {username}: {e}')
             continue
-        # stories is a list of items with 'get_bytes' removed in the API; here we
-        # need bytes so we call the per-item getter
-        for i, st in enumerate(stories, start=1):
-            getter = st.get('get_bytes')
-            if not getter:
-                print(f'Story {username}#{i} has no get_bytes method, skip')
-                # skip if not available
-                continue
+
+        for i, st in enumerate(parsedStories):
             try:
-                # fetch bytes via service (the service provides helper for posts,
-                # but not for story bytes; call getter in threadpool via service)
-                # The service exposes get_story_media that returns bytes for index
-                img_bytes, mime = await svc.get_story_media(username, i)
-                items = await extract_items_from_image(img_bytes, 'story', f'{username}:{i}')
+                url = st.get('url')
+                if not url:
+                    continue
+                img_bytes = requests.get(url).content
+                items = await extract_items_from_image(
+                    img_bytes,
+                    'story',
+                    image_url=url,
+                    username=username,
+                    date=st.get('date'),
+                    shortcode=st.get('shortcode'),
+                    market_name=get_market_name(username),
+                )
                 for it in items:
                     # normalize fields and insert
                     await _crud.insert_supermarket_item(db, it)

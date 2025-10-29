@@ -57,7 +57,6 @@ async def insert_supermarket_item(db: AsyncSession, item: dict):
         unit=item.get('unit'),
         store=item.get('store'),
         source_type=item.get('source_type'),
-        source_id=item.get('source_id'),
         raw_data=item.get('raw_data'),
     )
     db.add(obj)
