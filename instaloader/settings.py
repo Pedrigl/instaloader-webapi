@@ -41,11 +41,7 @@ if DOTENV_PATH.exists():
 if _HAS_BASESETTINGS:
     class Settings(BaseSettings):
 
-        DATABASE_URL: Optional[str] = Field(None, env="DATABASE_URL")
         LOG_LEVEL: str = "INFO"
-
-        OPENAI_API_KEY: Optional[str] = Field(None, env="OPENAI_API_KEY")
-        OPENAI_MODEL: str = Field("gpt-4o-mini", env="OPENAI_MODEL")
 
         WORKER_INTERVAL_SECONDS: int = 3600
         WORKER_TARGETS: str = ""          # e.g. "acct1,acct2,post:ABC"
@@ -57,10 +53,7 @@ if _HAS_BASESETTINGS:
 else:
     class Settings:
         def __init__(self):
-            self.DATABASE_URL = os.getenv('DATABASE_URL')
             self.LOG_LEVEL = os.getenv('LOG_LEVEL', 'INFO')
-            self.OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
-            self.OPENAI_MODEL = os.getenv('OPENAI_MODEL', 'gpt-4o-mini')
             self.WORKER_INTERVAL_SECONDS = int(os.getenv('WORKER_INTERVAL_SECONDS', '3600'))
             self.WORKER_TARGETS = os.getenv('WORKER_TARGETS', '')
             self.SUPERMARKET_TARGETS = os.getenv('SUPERMARKET_TARGETS', '')
