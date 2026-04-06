@@ -1,4 +1,5 @@
 from argparse import ArgumentParser
+import os
 from glob import glob
 from os.path import expanduser
 from platform import system
@@ -39,7 +40,19 @@ def import_session(cookiefile, sessionfile):
         raise SystemExit("Not logged in. Are you logged in successfully in Firefox?")
     print("Imported session cookie for {}.".format(username))
     instaloader.context.username = username
-    instaloader.save_session_to_file(sessionfile)
+    
+    if sessionfile is None:
+        session_dir = os.environ.get('SESSION_OUTPUT_DIR') or os.path.join(os.getcwd(), 'sessions')
+        os.makedirs(session_dir, exist_ok=True)
+        sessionfile = os.path.join(session_dir, f"session-{username}")
+
+    try:
+        instaloader.save_session_to_file(sessionfile)
+        print("Saved session to {}.".format(sessionfile))
+    except Exception as e:
+        print("Warning: Failed to save to local sessions folder: {}".format(e))
+        instaloader.save_session_to_file(None)
+        print("Fell back to default Instaloader folder.")
 
 
 if __name__ == "__main__":

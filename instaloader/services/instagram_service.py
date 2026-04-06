@@ -54,8 +54,11 @@ class InstagramService:
         else:
             # fallback to legacy location
             legacy = os.path.expanduser(os.path.join('~', '.config', 'instaloader'))
+            win_legacy = os.path.join(os.environ.get('LOCALAPPDATA', ''), 'Instaloader') if os.name == 'nt' else ''
             if os.path.isdir(legacy):
                 session_dir = legacy
+            elif win_legacy and os.path.isdir(win_legacy):
+                session_dir = win_legacy
             else:
                 return None
         for fn in os.listdir(session_dir):

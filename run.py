@@ -51,11 +51,7 @@ def main():
         except Exception as e:
             print('warning: import sessions failed:', e)
 
-        # init DB
-        try:
-            await _init_db_if_available()
-        except Exception as e:
-            print('warning: init db failed:', e)
+        # (No DB initialization required currently)
 
         # load session and run worker one-off
         try:
